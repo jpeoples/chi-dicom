@@ -15,13 +15,13 @@ except:
 
 setup(
     # Customize as needed
-    name='hello_world',
+    name='ucdm',
     version='0.0.0',
     description='My description.',
     long_description=long_description,
     long_description_content_type='text/markdown',
     # Fix this to new repository url
-    url='https://github.com/jpeoples/python_package_template',
+    url='https://github.com/jpeoples/uhn-collab-dicom-metadata',
     author='Jacob J. Peoples',
     author_email='jacob.peoples@queensu.ca',
 
@@ -31,7 +31,7 @@ setup(
     packages=find_packages(exclude=['contrib', 'docs', 'tests']),  # Required
 
     python_requires='>=3.0',
-    install_requires=[], # List your dependencies here
+    install_requires=['python-gdcm'], # List your dependencies here
 
     # List additional groups of dependencies here (e.g. development
     # dependencies). Users will be able to install these using the "extras"
