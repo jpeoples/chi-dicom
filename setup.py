@@ -1,6 +1,6 @@
 # Based on the sample at https://github.com/pypa/sampleproject/blob/master/setup.py
 
-from setuptools import setup, find_packages
+from setuptools import setup, find_packages, find_namespace_packages
 from os import path
 from io import open
 
@@ -15,7 +15,7 @@ except:
 
 setup(
     # Customize as needed
-    name='chidcm',
+    name='chi_dicom',
     version='0.0.0',
     description='My description.',
     long_description=long_description,
@@ -28,7 +28,7 @@ setup(
     # If you want to use a module rather than entire package, list them here
     # py_modules=['module_file_name'], 
     # This will find packages for you, excluding the folders listed.
-    packages=find_packages(exclude=['contrib', 'docs', 'tests']),  # Required
+    packages=find_namespace_packages(include=["chi.*"]), # Required
 
     python_requires='>=3.0',
     install_requires=['python-gdcm'], # List your dependencies here
