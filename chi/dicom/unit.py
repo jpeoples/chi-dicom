@@ -1,9 +1,9 @@
 class Unit:
     def __init__(self, files):
-        if isinstance(files, set):
+        if isinstance(files, frozenset):
             self.files = files
         else:
-            self.files = set(files)
+            self.files = frozenset(files)
 
     def file_set(self):
         return self.files
@@ -23,7 +23,7 @@ class BasicUnitizer(Unitizer):
         self.tag = tag
 
     def required_tags(self):
-        return set([self.tag])
+        return frozenset([self.tag])
 
     def items(self, scanner):
         for value, files in scanner.partition_by_tag(self.tag):

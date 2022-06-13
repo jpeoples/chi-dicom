@@ -93,8 +93,8 @@ class IndexedScannerResult(ScannerResult):
         self.tag_file_val = tag_file_val
         self.tag_val_file = tag_val_file
 
-        self._files = set(file_tag_val.keys())
-        self._tags = set(tag_file_val.keys())
+        self._files = frozenset(file_tag_val.keys())
+        self._tags = frozenset(tag_file_val.keys())
 
     def mapping_for_file(self, file, as_dict=False):
         dct = self.file_tag_val[file]
@@ -211,8 +211,8 @@ class GDCMScannerResult(ScannerResult):
 
     def tag_values(self, tag):
         """The set of values a tag takes across the set of files"""
-        return set(self._scanner.GetOrderedValues(tag.gdcm()))
+        return frozenset(self._scanner.GetOrderedValues(tag.gdcm()))
 
     def files_with_tag_value(self, tag, value):
         """All files with tag=value"""
-        return set(self._scanner.GetAllFilenamesFromTagToValue(tag.gdcm(), value))
+        return frozenset(self._scanner.GetAllFilenamesFromTagToValue(tag.gdcm(), value))

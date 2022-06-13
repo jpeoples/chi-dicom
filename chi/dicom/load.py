@@ -16,7 +16,7 @@ MULTI_VOLUME_TAGS = tag_set((
 SERIES_TAG = tag("0020|000e")
 
 def get_multi_volume_tags():
-    return MULTI_VOLUME_TAGS
+    return MULTI_VOLUME_TAGS.copy()
 
 def get_subseries(scan_result, multi_volume_tags=None):
     """Check for separate volumes in series a la slicer"""

@@ -87,8 +87,9 @@ def tag_iter(it):
 def tag_list(it):
     return list(tag_iter(it))
 
-def tag_set(it):
-    return set(tag_iter(it))
+def tag_set(it, mutable=False):
+    set_ctr = set if mutable else frozenset
+    return set_ctr(tag_iter(it))
 
 
 
