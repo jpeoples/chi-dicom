@@ -23,8 +23,7 @@ class ScannerResult:
         for file in self.files:
             for tag in self.tags:
                 val = self.get(file, tag)
-                if val is not None:
-                    yield file, tag, val
+                yield file, tag, val
 
     def _mapping_for_file_iter(self, file):
         for tag in self.tags:
@@ -43,8 +42,7 @@ class ScannerResult:
     def _mapping_for_tag_iter(self, tag):
         for file in self.files:
             val = self.get(file, tag)
-            if val is not None:
-                yield file, val
+            yield file, val
 
     def mapping_for_tag(self, tag, as_dict=False):
         """Pairs mapping file -> value for a given tag"""
@@ -65,6 +63,10 @@ class ScannerResult:
     def files_with_tag_value(self, tag, value):
         """All files with tag=value"""
         return set((f for f in self.files if self.get(f, tag) == value))
+
+    def partition_by_tag(self, tag):
+        for value in self.tag_values(tag):
+            yield value, self.files_with_tag_value(tag, value)
 
     def index(self):
         return IndexedScannerResult.from_mapping(self.all_results())
@@ -179,7 +181,10 @@ class GDCMScannerResult(ScannerResult):
         scanner = gdcm.Scanner()
         tags = ucdm.types.tag_set(tags)
         for tag in tags:
-            scanner.AddTag(tag.gdcm())
+            if tag.is_private:
+                scanner.AddPrivateTag(tag.gdcm())
+            else:
+                scanner.AddTag(tag.gdcm())
 
         succ = scanner.Scan(files)
         if not succ:

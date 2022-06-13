@@ -34,11 +34,18 @@ class Tag(collections.namedtuple('Tag', ['group', 'element'])):
 
     def gdcm(self):
         import gdcm
-        return gdcm.Tag(self.group, self.element)
+        if self.is_private:
+            return gdcm.PrivateTag(self.group, self.element)
+        else:
+            return gdcm.Tag(self.group, self.element)
 
     def keyword(self):
         import pydicom.datadict
         return pydicom.datadict.keyword_for_tag(self.pydicom())
+
+    @property
+    def is_private(self):
+        return (self.element >= 0x10) and ((self.group % 2) == 1)
 
 def tag(val, val2=None):
     """A flexible function for creating tags."""
@@ -84,9 +91,6 @@ def tag_set(it):
     return set(tag_iter(it))
 
 
-class Unit:
-    def file_set(self):
-        raise NotImplementedError
 
             
 
