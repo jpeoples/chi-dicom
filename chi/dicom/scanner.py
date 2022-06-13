@@ -1,7 +1,7 @@
 import os
 import fnmatch
 
-from  . import types
+from . import types
 
 
 def list_files(d, glob_string=None):
@@ -15,6 +15,20 @@ def list_files(d, glob_string=None):
             yield from (os.path.join(root, f) for f in filtered_files)
 
     return (list(_list()))
+
+def scan_files(files, tags):
+    tags = types.tag_set(tags)
+    return GDCMScannerResult.scan_files(files, tags).index()
+
+def scan_dir(dir, tags):
+    tags = types.tag_set(tags)
+    return GDCMScannerResult.scan_dir(dir, tags).index()
+
+def scan(file_list_or_dir, tags):
+    if isinstance(file_list_or_dir, str):
+        return scan_dir(file_list_or_dir, tags)
+    else:
+        return scan_files(file_list_or_dir, tags)
 
 class ScannerResult:
     def all_results(self):

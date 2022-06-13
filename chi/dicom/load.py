@@ -1,9 +1,8 @@
 import gdcm
 import SimpleITK as sitk
 
-from .attribute import attribute
-from .types import tag, tag_set
-from .scanner import GDCMScannerResult, ScannerResult, list_files
+from .types import attribute, as_tag, tag_set
+from .scanner import GDCMScannerResult, list_files
 
 MULTI_VOLUME_TAGS = tag_set((
     "0020|000e", # Series Instance UID
@@ -13,7 +12,7 @@ MULTI_VOLUME_TAGS = tag_set((
     "0018|9089" # Diffusion Gradient Orientation
 ))
 
-SERIES_TAG = tag("0020|000e")
+SERIES_TAG = as_tag("0020|000e")
 
 def get_multi_volume_tags():
     return MULTI_VOLUME_TAGS.copy()
@@ -138,8 +137,9 @@ class SeriesLoadResult:
 
         return load_dicom_files(self.files, return_metadata=self.return_metadata)
 
-
-@attribute(tags=MULTI_VOLUME_TAGS)
-def sitk_image(unit_scanner):
-    # Unitized on series
-    return SeriesLoadResult.from_scan(unit_scanner)
+    @classmethod
+    def as_attr(cls):
+        @attribute(tags=MULTI_VOLUME_TAGS, default_name="SeriesLoadResult")
+        def attr(unit_scanner):
+            return cls.from_scan(unit_scanner)
+        return attr
