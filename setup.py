@@ -15,7 +15,7 @@ except:
 
 setup(
     # Customize as needed
-    name='ucdm',
+    name='chidcm',
     version='0.0.0',
     description='My description.',
     long_description=long_description,

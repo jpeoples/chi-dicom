@@ -1,7 +1,7 @@
 import os
 import fnmatch
 
-import ucdm.types
+import chidcm.types
 
 
 
@@ -179,7 +179,7 @@ class GDCMScannerResult(ScannerResult):
         """Scan a set of dicom files for a set of tags"""
         import gdcm
         scanner = gdcm.Scanner()
-        tags = ucdm.types.tag_set(tags)
+        tags = chidcm.types.tag_set(tags)
         for tag in tags:
             if tag.is_private:
                 scanner.AddPrivateTag(tag.gdcm())
