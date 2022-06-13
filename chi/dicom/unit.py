@@ -1,3 +1,5 @@
+from .types import tag
+
 class Unit:
     def __init__(self, files):
         if isinstance(files, frozenset):
@@ -18,9 +20,14 @@ class Unitizer:
     def items(self, scanner):
         raise NotImplementedError
 
-class BasicUnitizer(Unitizer):
+SERIES_TAG = tag("0020|000e")
+class SingleTagUnitizer(Unitizer):
     def __init__(self, tag):
         self.tag = tag
+
+    @classmethod
+    def by_series(cls):
+        return cls(SERIES_TAG)
 
     def required_tags(self):
         return frozenset([self.tag])
