@@ -8,8 +8,11 @@ from .types import (
     tag_set,
     tag_list,
     tag_iter,
-    get_unitizer
+    get_unitizer,
+    Tag,
+    Attribute,
+    Unitizer
 )
 from .load import SeriesLoadResult
-from .scanner import ScannerResult
-from .process import read_dicom_attributes, dicom_series
+from .scanner import ScannerResult, scan, scan_dir, scan_files
+from .process import read_dicom_attributes, dicom_series, get_processor

@@ -1,4 +1,5 @@
 import collections.abc
+from . import util
 
 class Tag(collections.namedtuple('Tag', ['group', 'element'])):
     @classmethod
@@ -45,17 +46,6 @@ class Tag(collections.namedtuple('Tag', ['group', 'element'])):
     @property
     def is_private(self):
         return (self.element >= 0x10) and ((self.group % 2) == 1)
-
-    def as_attr(self, post_proc=None, default_name=None):
-        return lookup_tag(self, post_proc=post_proc, default_name=default_name)
-
-    def as_unitizer(self):
-        return SingleTagUnitizer(self)
-
-
-
-
-            
 
 
 
@@ -164,6 +154,9 @@ class AttributeSet(collections.abc.Mapping):
         a = as_attr(a, post_proc=post_proc)
         self.attributes[name] = a
 
+    def get_values(self, unit_scanner, as_dict=False):
+        return util.value_map(lambda attr: attr.get_value(unit_scanner), self.items(), as_dict=as_dict)
+
     def __getitem__(self, k):
         return self.attributes[k]
 
@@ -243,23 +236,6 @@ def attr_set(v):
         aset.add(v, name=k)
     return aset
 
-
-
-
-
-class Unit:
-    def __init__(self, files):
-        if isinstance(files, frozenset):
-            self.files = files
-        else:
-            self.files = frozenset(files)
-
-    def file_set(self):
-        return self.files
-
-    def unit_scanner(self, scanner):
-        return scanner.filter_files(self.file_set())
-
 class Unitizer:
     def required_tags(self):
         raise NotImplementedError
@@ -280,8 +256,7 @@ class SingleTagUnitizer(Unitizer):
         return frozenset([self.tag])
 
     def items(self, scanner):
-        for value, files in scanner.partition_by_tag(self.tag):
-            yield value, Unit(files)
+        return util.value_map(scanner.filter_files, scanner.partition_by_tag(self.tag))
 
 def get_unitizer(v=None):
     if isinstance(v, Unitizer):
@@ -291,7 +266,7 @@ def get_unitizer(v=None):
     elif isinstance(v, str):
         return SingleTagUnitizer(as_tag(v))
     elif v is None:
-        return SERIES_TAG.as_unitizer()
+        return SingleTagUnitizer(SERIES_TAG)
 
 
 
