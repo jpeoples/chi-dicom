@@ -15,13 +15,13 @@ except:
 
 setup(
     # Customize as needed
-    name='chi_dicom',
+    name='chi-dicom',
     version='0.0.0',
     description='My description.',
     long_description=long_description,
     long_description_content_type='text/markdown',
     # Fix this to new repository url
-    url='https://github.com/jpeoples/uhn-collab-dicom-metadata',
+    url='https://github.com/jpeoples/chi-dicom',
     author='Jacob J. Peoples',
     author_email='jacob.peoples@queensu.ca',
 
