@@ -69,7 +69,7 @@ def as_tag(val, val2=None):
     elif isinstance(val, gdcm.Tag):
         return Tag.from_gdcm_tag(val)
     elif isinstance(val, pydicom.tag.BaseTag):
-        return Tag.from_pydicom_tag
+        return Tag.from_pydicom_tag(val)
     elif isinstance(val, str):
         s = val
         try:
@@ -119,16 +119,31 @@ class Attribute:
     def __call__(self, unit_scan):
         return self.get_value(unit_scan)
 
-# Maybe allow or not Nullable
+    def modify(self, post_proc=None, additional_tags=None, default_name=None):
+        if post_proc is None and default_name is None and additional_tags is None:
+            return self
+
+        if additional_tags is None:
+            additional_tags = set()
+        tags = self.required_tags() | tag_set(additional_tags)
+
+        func = (lambda us: post_proc(self(us))) if post_proc else self
+        default_name = default_name if default_name else self.default_name()
+
+        return BasicAttribute(tags, func, default_name=default_name if default_name else self.default_name())
+
 class BasicAttribute(Attribute):
-    def __init__(self, tags, function, post_proc=None, default_name=None):
+    def __init__(self, tags, function, default_name=None):
         self.tags = tags
         self.function = function
-        if post_proc is None:
-            post_proc = lambda s: s.strip() if isinstance(s, str) else s
-        self._post_proc = post_proc
         self._default_name = default_name
-    
+
+        if self._default_name is None:
+            try:
+                self._default_name = self.function.default_name()
+            except AttributeError:
+                pass
+
     def default_name(self):
         return self._default_name
 
@@ -136,18 +151,8 @@ class BasicAttribute(Attribute):
         return self.tags
 
     def get_value(self, unit_scan):
-        return self.post_proc(self.function(unit_scan))
+        return self.function(unit_scan)
 
-    def post_proc(self, v):
-        return self._post_proc(v)
-
-    def add_post(self, post_proc, additional_tags=None):
-        if additional_tags is not None:
-            tags = self.tags | tag_set(additional_tags)
-        return BasicAttribute(tags, self, post_proc=post_proc, default_name=self._default_name)
-
-    def set_default_name(self, name):
-        return BasicAttribute(self.tags, self.function, self._post_proc, name)
 
 
 
@@ -156,7 +161,7 @@ class AttributeSet(collections.abc.Mapping):
         self.attributes = {}
 
     def add(self, a, post_proc=None, name=None):
-        a = as_attr(a, post_proc, name)
+        a = as_attr(a, post_proc=post_proc)
         self.attributes[name] = a
 
     def __getitem__(self, k):
@@ -180,15 +185,12 @@ class AttributeSet(collections.abc.Mapping):
     def items(self):
         return self.attributes.items()
 
-def make_attribute(tags, function, post_proc=None, default_name=None):
-    return BasicAttribute(tag_set(tags), function, post_proc=post_proc, default_name=default_name)
-
-def attribute(tags, post_proc=None, default_name=None):
+def attribute(tags, default_name=None):
     def wrapper(f):
         _default_name = default_name
         if default_name is None:
             _default_name = f.__name__
-        return make_attribute(tags, f, post_proc, default_name=_default_name)
+        return BasicAttribute(tag_set(tags), f, default_name=_default_name)
 
     return wrapper
 
@@ -201,7 +203,7 @@ def lookup_tag(t, post_proc=None, default_name=None):
         except ImportError:
             pass
     
-    @attribute([t], post_proc=post_proc, default_name=default_name)
+    @attribute([t], default_name=default_name)
     def lookup(unit_scan):
         tvs = unit_scan.tag_values(t)
         if len(tvs) != 1:
@@ -209,32 +211,24 @@ def lookup_tag(t, post_proc=None, default_name=None):
         v = tvs.pop()
         return v
     
-    return lookup
+    return lookup.modify(post_proc)
 
 @attribute(set(), default_name="NumberOfSlices")
 def number_of_slices(unit_scanner):
     return len(unit_scanner.files)
 
-def as_attr(a, post_proc=None, default_name=None):
-    ba = None
-    if isinstance(a, BasicAttribute):
-        ba = a
-        if post_proc is not None:
-            ba = ba.add_post(post_proc)
-    elif isinstance(a, Attribute):
-        ba = make_attribute(a.required_tags(), a, post_proc=post_proc, default_name=a.default_name())
-    elif isinstance(a, str):
-        ba = lookup_tag(a, post_proc=post_proc, default_name=default_name)
-    elif isinstance(a, tuple):
-        assert post_proc is None
-        assert default_name is None
-        ba = as_attr(*a)
-    else:
-        ba = a.as_attr(post_proc=post_proc, default_name=default_name)
 
-    if default_name is not None:
-        ba = ba.set_default_name(default_name)
-    return ba
+def as_attr(a, post_proc=None, additional_tags=None, default_name=None):
+    if isinstance(a, Attribute):
+        attr = a
+    elif isinstance(a, (Tag, str)):
+        attr = lookup_tag(a)
+    elif isinstance(a, tuple):
+        attr = as_attr(*a)
+    else:
+        attr = a.as_attr()
+
+    return attr.modify(post_proc=post_proc, additional_tags=additional_tags, default_name=default_name)
 
 def attr_set(v):
     if isinstance(v, AttributeSet):
