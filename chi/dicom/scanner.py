@@ -1,20 +1,7 @@
-import os
-import fnmatch
-
 from . import types
+from .util import list_files
 
 
-def list_files(d, glob_string=None):
-    """List of all files under root d matching glob_string"""
-    def _list():
-        for root, dirs, files in os.walk(d):
-            if glob_string is None:
-                filtered_files = files
-            else:
-                filtered_files = fnmatch.filter(files, glob_string)
-            yield from (os.path.join(root, f) for f in filtered_files)
-
-    return (list(_list()))
 
 def scan_files(files, tags):
     tags = types.tag_set(tags)

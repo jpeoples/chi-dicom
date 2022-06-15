@@ -2,7 +2,8 @@ import gdcm
 import SimpleITK as sitk
 
 from .types import attribute, as_tag, tag_set
-from .scanner import GDCMScannerResult, list_files
+from .scanner import scan_files, scan_dir
+from .util import list_files
 
 MULTI_VOLUME_TAGS = tag_set((
     "0020|000e", # Series Instance UID
@@ -111,14 +112,14 @@ class SeriesLoadResult:
 
     @classmethod
     def from_files(cls, files, return_metadata=False):
-        scan = GDCMScannerResult.scan_files(files, tags=get_multi_volume_tags())
+        scan = scan_files(files, tags=get_multi_volume_tags())
         return cls.from_scan(scan, return_metadata=return_metadata)
 
 
     @classmethod
     def from_dir(cls, data_directory, return_metadata=False):
-        files = list_files(data_directory, "*.dcm")
-        return cls.from_files(files, return_metadata=return_metadata)
+        scan = scan_dir(data_directory, tags=get_multi_volume_tags())
+        return cls.from_scan(scan, return_metadata=return_metadata)
 
 
     def has_subseries(self):
