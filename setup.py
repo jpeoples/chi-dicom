@@ -42,7 +42,7 @@ setup(
     # Similar to `install_requires` above, these must be valid existing
     # projects.
     extras_require={  # Optional
-        'all': ['pydicom', 'SimpleITK'],
+        'all': ['pydicom', 'SimpleITK', "pandas"],
     },
     # If any entry points, list them here, see https://setuptools.pypa.io/en/latest/userguide/entry_point.html
     entry_points = {}

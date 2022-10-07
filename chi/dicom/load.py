@@ -101,7 +101,7 @@ class SeriesLoadResult:
             files = scan.files_with_tag_value(SERIES_TAG, series_id)
             # If this actually reduces the file set, we need to filter the scanner
             if len(files) < len(scan.files):
-                scan = scan.filter(SERIES_TAG, series_id)
+                scan = scan.filter_files(files)
             else:
                 assert len(files) == len(scan.files)
 
@@ -132,6 +132,9 @@ class SeriesLoadResult:
         assert(self.has_subseries())
         for val, files in self.subseries[tag].items():
             yield val, load_dicom_files(files, return_metadata=self.return_metadata)
+
+    def load_specific_subseries(self, tag, value):
+        return load_dicom_files(self.subseries[tag][value], return_metadata=self.return_metadata)
 
     def load_series(self):
         assert(not self.has_subseries())

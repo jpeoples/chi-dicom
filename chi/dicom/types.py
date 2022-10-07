@@ -1,6 +1,7 @@
 import collections.abc
 from . import util
 
+
 class Tag(collections.namedtuple('Tag', ['group', 'element'])):
     @classmethod
     def from_tag_string(cls, s, split_char='|'):
@@ -42,6 +43,9 @@ class Tag(collections.namedtuple('Tag', ['group', 'element'])):
     def keyword(self):
         import pydicom.datadict
         return pydicom.datadict.keyword_for_tag(self.pydicom())
+    
+    def tag_string(self):
+        return f"{self.group:04x}|{self.element:04x}"
 
     @property
     def is_private(self):
@@ -54,7 +58,9 @@ def as_tag(val, val2=None):
     import gdcm
     import pydicom.tag
 
-    if isinstance(val, Tag):
+    if hasattr(val, 'as_tag'):
+        return val.as_tag()
+    elif isinstance(val, Tag):
         return val
     elif isinstance(val, gdcm.Tag):
         return Tag.from_gdcm_tag(val)
@@ -216,8 +222,8 @@ def as_attr(a, post_proc=None, additional_tags=None, default_name=None):
         attr = a
     elif isinstance(a, (Tag, str)):
         attr = lookup_tag(a)
-    elif isinstance(a, tuple):
-        attr = as_attr(*a)
+    #elif isinstance(a, tuple):
+    #    attr = as_attr(*a)
     else:
         attr = a.as_attr()
 
@@ -258,16 +264,84 @@ class SingleTagUnitizer(Unitizer):
     def items(self, scanner):
         return util.value_map(scanner.filter_files, scanner.partition_by_tag(self.tag))
 
-def get_unitizer(v=None):
+
+
+class DFOptimizedSingleTagUnitizer(SingleTagUnitizer):
+    def __init__(self, tag, tag_converter=None):
+        if tag_converter is None:
+            tag_converter = Tag # TODO Should we check type of tag?
+            assert type(tag) == Tag
+        self.tag_converter = tag_converter
+        super().__init__(tag)
+
+    def items(self, scanner):
+        from .scanner import IndexedDFScannerResult
+
+        df = scanner.to_dataframe(tag_to_string=self.tag_converter.tag_string)
+
+        tag_string = self.tag_converter.tag_string(self.tag)
+
+        for sid, index in df.groupby(tag_string).groups.items():
+            yield sid, IndexedDFScannerResult.from_dataframe(df.loc[index], string_to_tag=self.tag_converter.from_tag_string)
+
+DFOptimizedSingleTagUnitizer = lambda t, c: SingleTagUnitizer(t)
+
+
+
+
+def get_unitizer(v=None, tag_converter=None):
     if isinstance(v, Unitizer):
         return v
     elif isinstance(v, Tag):
-        return SingleTagUnitizer(v)
+        return DFOptimizedSingleTagUnitizer(v, tag_converter)
     elif isinstance(v, str):
-        return SingleTagUnitizer(as_tag(v))
+        return DFOptimizedSingleTagUnitizer(as_tag(v), tag_converter)
     elif v is None:
-        return SingleTagUnitizer(SERIES_TAG)
+        return DFOptimizedSingleTagUnitizer(SERIES_TAG, tag_converter)
 
+
+class _SingleItemTupleUnitizer(Unitizer):
+    def __init__(self, unitizer):
+        self.unitizer = unitizer
+
+    def required_tags(self):
+        return self.unitizer.required_tags()
+
+    def items(self, scanner):
+        for ix, partial in self.unitizer.items(scanner):
+            yield (ix, ), partial
+
+class MergeUnits:
+    def __init__(self, a, b):
+        self.a = a
+        self.b = b
+
+    def required_tags(self):
+        return self.a.required_tags() | self.b.required_tags()
+
+    def items(self, scanner):
+        for aix, apartial in self.a.items(scanner):
+            for bix, bpartial in self.b.items(apartial):
+                yield aix + bix, bpartial
+
+def merge_all(units):
+    if len(units) == 1:
+        return units[0]
+    else:
+        return MergeUnits(units[0],  merge_all(units[1:]))
+
+
+class HierarchicalUnitizer(Unitizer):
+    def __init__(self, tags, tag_converter=None):
+        self.tags = tag_list(tags)
+        unitizers = [_SingleItemTupleUnitizer(DFOptimizedSingleTagUnitizer(tag, tag_converter)) for tag in self.tags]
+        self.unitizer = merge_all(unitizers)
+
+    def required_tags(self):
+        return self.unitizer.required_tags()
+
+    def items(self, scanner):
+        yield from self.unitizer.items(scanner)
 
 
             
