@@ -31,7 +31,7 @@ setup(
     packages=find_namespace_packages(include=["chi.*"]), # Required
 
     python_requires='>=3.0',
-    install_requires=['python-gdcm'], # List your dependencies here
+    install_requires=['python-gdcm', 'pydicom', 'SimpleITK', 'pandas'], # List your dependencies here
 
     # List additional groups of dependencies here (e.g. development
     # dependencies). Users will be able to install these using the "extras"
@@ -42,7 +42,6 @@ setup(
     # Similar to `install_requires` above, these must be valid existing
     # projects.
     extras_require={  # Optional
-        'all': ['pydicom', 'SimpleITK', "pandas", "python-gdcm"],
     },
     # If any entry points, list them here, see https://setuptools.pypa.io/en/latest/userguide/entry_point.html
     entry_points = {}
