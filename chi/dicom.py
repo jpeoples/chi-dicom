@@ -192,20 +192,23 @@ class SeriesLoadResult:
     The files are a complete set for a given SeriesInstanceUID. The subseries parameter is
     the result of get_subseries for these files. The result is XB!
     """
-    def __init__(self, files, subseries, scan_result):
+    def __init__(self, files, subseries, scan_result, series_id):
         self.files = files
         self.subseries = subseries
         self.scan_result = scan_result
+        self.series_id = series_id
 
     @classmethod
     def from_scan_result(cls, scan_result, series_id=None):
         check_has_tags(scan_result, MULTI_VOLUME_TAGS)
         if series_id is None:
-            assert len(get_series(scan_result)) == 1
+            series = get_series(scan_result)
+            assert len(series) == 1
+            series_id = next(iter(series))
         else:
             scan_result = scan_result.loc[scan_result[SERIES_TAG.tag_string()]==series_id]
 
-        return cls(list(scan_result.index), get_subseries(scan_result), scan_result)
+        return cls(list(scan_result.index), get_subseries(scan_result), scan_result, series_id)
 
     @classmethod
     def from_files(cls, files):
