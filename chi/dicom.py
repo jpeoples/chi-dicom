@@ -69,7 +69,26 @@ def _prep_gdcm_scanner(tags):
 
     return scanner
 
-def scan_files(files, tags, tag_to_string=lambda t: t.tag_string()):
+def scan_files_pydicom(files, tags, tag_to_string=lambda t: t.tag_string()):
+    import pydicom
+    results = {}
+
+    def fix_val(x):
+        return "" if x is None else str(x.value)
+
+    for file in files:
+        with pydicom.dcmread(file, stop_before_pixels=True, specific_tags=tags) as dcm:
+            results[file] = {tag_to_string(tag): fix_val(dcm.get(tag)) for tag in tags} 
+                    
+
+    return pandas.DataFrame.from_dict(results, orient='index')
+
+def scan_files(files, tags, tag_to_string=lambda t: t.tag_string(), pydcm_backend=False, use_tqdm=False):
+    if pydcm_backend:
+        if use_tqdm:
+            from tqdm import tqdm
+            files = tqdm(files)
+        return scan_files_pydicom(files, tags, tag_to_string)
     scanner = _prep_gdcm_scanner(tags)
     succ = scanner.Scan(files)
     if not succ:
