@@ -179,10 +179,9 @@ def get_tag_set_for_args(args):
 
     
 
-def get_index_file_pairs_for_args(args, exclusions=frozenset()):
-    index = pandas.read_csv(args.index, index_col=0)
-    to_use = index.index.difference(exclusions)
-    index=index.loc[to_use]
+def get_index_file_pairs_for_args(args, index=None):
+    if index is None:
+        index = load_index(args)
 
     assert 'ZipFile' in index.columns
     for zfname, tab in tqdm(index.groupby('ZipFile')):
@@ -191,15 +190,6 @@ def get_index_file_pairs_for_args(args, exclusions=frozenset()):
             for ix, name in tab['ArcName'].items():
                 with zf.open(name) as fp:
                     yield ix, fp
-
-
-
-
-def load_existing_output_file(args):
-    if args.output is None or not os.path.exists(args.output):
-        return pandas.DataFrame()
-    else:
-        return pandas.read_csv(args.output, index_col=0)
 
 def make_empty_df(index_cols, col_names):
     if len(index_cols) > 1:
@@ -219,33 +209,14 @@ def make_df_from_result_dict(read_results, args, tag_labels):
 
     return new_results
 
-def merge_results(old, new, args):
-    if args.do_not_merge:
-        return new
-    
-    if args.overwrite:
-        primary = new
-        secondary = old
-    elif args.skip_existing:
-        primary = old
-        secondary = new
-
-    secondary_keep = secondary.index.difference(primary.index)
-    secondary = secondary.loc[secondary_keep]
-
-    return pandas.concat([primary, secondary], axis='rows')
-
+def load_index(args):
+    index = pandas.read_csv(args.index, index_col=0)
+    return index
 
 @entry.point
 def scan(args):
     tag_set, name_mapping = get_tag_set_for_args(args)
     print(name_mapping)
-
-    existing = load_existing_output_file(args)
-    if args.skip_existing:
-        exclusions = frozenset(existing.index)
-    else:
-        exclusions = frozenset([])
 
     read_results = {}
 
@@ -253,16 +224,16 @@ def scan(args):
         return "" if x is None else str(x.value)
     tag_to_string = lambda t: name_mapping.get(t, t.tag_string())
 
-    for ix, fp in get_index_file_pairs_for_args(args, exclusions=exclusions):
+    index = load_index(args)
+    for ix, fp in get_index_file_pairs_for_args(args, index):
         with pydicom.dcmread(fp, stop_before_pixels=True, specific_tags=tag_set) as dcm:
             read_results[ix] = {tag_to_string(tag): fix_val(dcm.get(tag)) for tag in tag_set} 
 
 
     tag_labels = [tag_to_string(t) for t in tag_set]
-    new_results = make_df_from_result_dict(read_results, args, tag_labels)
+    scan_results = make_df_from_result_dict(read_results, args, tag_labels)
 
-    output = merge_results(existing, new_results, args)
-
+    output = index.join(scan_results, how='inner', validate='one_to_one')
     output.to_csv(args.output)
 
 @scan.parser
@@ -271,9 +242,6 @@ def scan_parser(parser):
     parser.add_argument("--output", required=True)
     parser.add_argument("--tags", nargs="+", required=True, action='extend')
     parser.add_argument("--index", required=True)
-    parser.add_argument("--overwrite", action="store_true")
-    parser.add_argument("--do_not_merge", action="store_true")
-    parser.add_argument("--skip_existing", action="store_true")
     parser.add_argument("--tag_conf", required=False)
 
 def fix_path(path):
