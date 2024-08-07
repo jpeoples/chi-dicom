@@ -19,18 +19,28 @@ class BatchParRun:
     def multiple(self, result):
         return result
 
-    def run_parallel(self, n_jobs=-1, start=0, stop=None):
-        results = Parallel(n_jobs=n_jobs, verbose=10)(delayed(self.execute_one)(arg) for arg in self.iterate(start, stop))
+    def _prep_args(self, iter_args, execute_args):
+        if iter_args is None:
+            iter_args = tuple()
+        if execute_args is None:
+            execute_args = tuple()
+        return iter_args, execute_args
+
+    def run_parallel(self, n_jobs=-1, start=0, stop=None, iter_args=None, execute_args=None):
+        iter_args, execute_args = self._prep_args(iter_args, execute_args)
+        
+        results = Parallel(n_jobs=n_jobs, verbose=10)(delayed(self.execute_one)(arg, *execute_args) for arg in self.iterate(start, stop, *iter_args))
         results = pandas.DataFrame.from_records([r for res in results for r in res])
         return results
 
-    def run_from_args(self, args):
+    def run_from_args(self, args, iter_args=None, execute_args=None):
+        iter_args, execute_args = self._prep_args(iter_args, execute_args)
         start = args.batch_start
-        stop = self.iteration_count()
+        stop = self.iteration_count(*iter_args)
         if args.batch_count > -1:
             stop = min(start + args.batch_count, stop)
 
-        self.run_parallel(n_jobs=args.jobs, start=start, stop=stop)
+        return self.run_parallel(n_jobs=args.jobs, start=start, stop=stop, iter_args=iter_args, execute_args=execute_args)
 
     @classmethod
     def update_parser(cls, parser):
@@ -40,27 +50,32 @@ class BatchParRun:
 
 
 class DFBatchParRun(BatchParRun):
-    def __init__(self, df, group_key=None):
-        self.df = df
-        self.group_key = group_key
-        if self.group_key:
-            self.grouped = self.df.groupby(self.group_key)
-            self.group_names = list(self.grouped.groups.keys())
 
-    def iteration_count(self):
-        if self.group_key is None:
-            return self.df.shape[0]
+    def iter_info(self, df, group_key=None):
+        info = dict(df=df)
+        if group_key:
+            grouped = df.groupby(group_key),
+            info = dict(
+                group_key=group_key,
+                grouped = grouped,
+                group_names = list(grouped.groups.keys())
+            )
+        return info
+
+    def iteration_count(self, iter_info):
+        if iter_info.get('group_key') is None:
+            return iter_info.get('df').shape[0]
         else:
-            return len(self.group_names)
+            return len(iter_info.get('group_names'))
 
-    def iterate(self, start=0, stop=None):
-        if self.group_key is None:
-            rowiter = self.df.iloc[slice(start, stop)].iterrows()
+    def iterate(self, start=0, stop=None, iter_info=iter_info):
+        if iter_info.get('group_key') is None:
+            rowiter = iter_info['df'].iloc[slice(start, stop)].iterrows()
             yield from rowiter
         else:
-            group_names = self.group_names[slice(start, stop)]
+            group_names = iter_info.get("group_names")[slice(start, stop)]
             for gname in group_names:
-                tab = self.grouped.get_group(gname)
+                tab = iter_info["grouped"].get_group(gname)
                 yield gname, tab
 
 

@@ -17,17 +17,17 @@ def read_tag(s):
     return tg
 
 class ConvertBatchParRun(DFBatchParRun):
-    def __init__(self, dcm, conversions, convert_func, input_root, output_root, output_tag):
-        self.dcm = pandas.read_csv(dcm, index_col=0)
+    def __init__(self, convert_func, input_root, output_root, output_tag):
         self.convert_func = convert_func
         self.input_root = input_root
         self.output_root = output_root
         self.output_tag = output_tag
-        convdf = pandas.read_csv(conversions)
-        super().__init__(convdf)
 
-    def iterate(self, start, stop):
-        for ix, row in super().iterate(start, stop):
+    def iteration_count(self, iter_info, dcm):
+        return super().iteration_count(iter_info)
+
+    def iterate(self, start, stop, iter_info, dcm):
+        for ix, row in super().iterate(start, stop, iter_info):
             series = row['SeriesInstanceUID']
             SERIES = dicom.Tag.from_pydicom_attr("SeriesInstanceUID").keyword()
             full = row['FullSeries']
@@ -38,11 +38,11 @@ class ConvertBatchParRun(DFBatchParRun):
                 SUBSERIES = read_tag(subseriestag).keyword()
                 #SUBSERIES = dicom.Tag.from_tag_string(subseriestag).tag_string()
 
-            dcm_rows = (self.dcm[SERIES] == series) 
+            dcm_rows = (dcm[SERIES] == series) 
             if not full:
-                dcm_rows &= (self.dcm[SUBSERIES]==subseries)
+                dcm_rows &= (dcm[SUBSERIES]==subseries)
             
-            yield ix, row, self.dcm.loc[dcm_rows]
+            yield ix, row, dcm.loc[dcm_rows]
 
     def execute_one(self, arg):
         ix, row, dcm_loc = arg
@@ -66,6 +66,7 @@ def convert_parser(parser):
     # TODO Do we need an index column info?
     parser.add_argument("--output_root", required=True)
     parser.add_argument("--output_column", required=True) # Column specifying output name in conversions
+    parser.add_argument("--output_file", required=False)
 
 import shutil
 import os
@@ -85,13 +86,14 @@ def filter_impl(input_root, output_root, target_tag, ix, row, dcm):
     # Delete the output files if they exist
     # TODO Support for zip archives.
     if os.listdir(output_folder):
-        os.unlink([os.path.join(output_folder, n) for n in os.listdir(output_folder)])
-    for f, row in dcm.iterrows():
+        for n in os.listdir(output_folder):
+            os.unlink(os.path.join(output_folder, n))
+    for f, dcmrow in dcm.iterrows():
         if zip_mode:
-            in_zip = os.path.join(input_root, row['ZipFile'])
+            in_zip = os.path.join(input_root, dcmrow['ZipFile'])
             dcmname = os.path.basename(f)
             output_file = os.path.join(output_folder, dcmname)
-            name = row['ArcName']
+            name = dcmrow['ArcName']
             with zipfile.ZipFile(in_zip, 'r') as zf:
                 with zf.open(name) as f, open(output_file, 'wb') as of:
                     shutil.copyfileobj(f, of)
@@ -108,8 +110,13 @@ def filter_impl(input_root, output_root, target_tag, ix, row, dcm):
 
 @entry.point
 def filter(args):
-    runner = ConvertBatchParRun(args.dicom_index, args.conversions, filter_impl, args.dicom_root, args.output_root, args.output_column)
-    runner.run_from_args(args)
+    runner = ConvertBatchParRun(filter_impl, args.dicom_root, args.output_root, args.output_column)
+    dcm = pandas.read_csv(args.dicom_index, index_col=0)
+    convs = pandas.read_csv(args.conversions)
+    iter_info = runner.iter_info(convs)
+    results = runner.run_from_args(args, iter_args=(iter_info, dcm))
+    if args.output_file is not None:
+        results.to_csv(args.output_file, index=False)
 
 
 
