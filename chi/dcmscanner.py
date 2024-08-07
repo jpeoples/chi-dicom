@@ -18,8 +18,8 @@
 #  
 
 from chi import dicom
+from chi.util import EntryPoints, DFBatchParRun
 
-import argparse
 import fnmatch
 import json
 import pathlib
@@ -28,92 +28,8 @@ import zipfile
 
 import pandas
 import pydicom
-from tqdm import tqdm
-
-import time
 
 from joblib import Parallel, delayed
-
-
-class Tic:
-    def __init__(self):
-        self.tic()
-
-    def get_time(self):
-        return time.perf_counter_ns()
-
-    def process_diff(self, diff):
-        return diff / 1e9
-
-    def tic(self):
-        self._last = self.get_time()
-    
-    def toc(self):
-        diff = self.get_time() - self._last
-        return self.process_diff(diff)
-
-
-def make_parser(f=None):
-    parser = argparse.ArgumentParser()
-    if f:
-        f(parser)
-    subparsers = parser.add_subparsers()
-    return parser, subparsers
-
-
-class _EntryPoint:
-    def __init__(self, f):
-        self.f = f
-        self._parser = None
-        self.name = f.__name__
-
-        f.parser = self.parser
-
-
-    def prepare_parser(self, parser, subparsers):
-        parser = subparsers.add_parser(self.name)
-        if self._parser:
-            self._parser(parser)
-
-        parser.set_defaults(cmd=self.f)
-
-    def parser(self, f):
-        self._parser = f
-        return f
-
-class EntryPoints:
-    def __init__(self):
-        self.entrypoints = []
-        self.parser_functions = []
-
-    def common_parser(self, parser):
-        for pf in self.parser_functions:
-            pf(parser)
-
-    def point(self, f):
-        ep =  _EntryPoint(f)
-        self.entrypoints.append(ep)
-        return f
-
-    def add_common_parser(self, f):
-        self.parser_functions.append(f)
-        return f
-    
-
-    def parse_args(self):
-        parser, subparsers = make_parser(self.common_parser)
-        for ep in self.entrypoints:
-            ep.prepare_parser(parser, subparsers)
-
-        args = parser.parse_args()
-        return args
-
-    def main(self):
-        args = self.parse_args()
-        tic = Tic()
-        args.cmd(args)
-        tdiff = tic.toc()
-        print(f"Ran in {tdiff:0.05f} seconds")
 
 def main():
     entry.main()
@@ -203,19 +119,6 @@ def get_tag_set_for_args(args):
     tag_set = read_tagset(tag_string_list, special_cases=special_tag_cases, name_mapping=name_mapping)
     return tag_set, name_mapping
 
-    
-
-def get_index_file_pairs_for_args(args, index=None):
-    if index is None:
-        index = load_index(args)
-
-    assert 'ZipFile' in index.columns
-    for zfname, tab in tqdm(index.groupby('ZipFile')):
-        zfpath = os.path.join(args.root, zfname)
-        with zipfile.ZipFile(zfpath, "r") as zf:
-            for ix, name in tab['ArcName'].items():
-                with zf.open(name) as fp:
-                    yield ix, fp
 
 def scan_process_zip(zfname, tab, args, name_mapping, tag_set):
     def fix_val(x):
@@ -296,6 +199,7 @@ def scan_parser(parser):
     parser.add_argument("--tag_conf", required=False)
     parser.add_argument("--batch_offset", required=False, default=-1, type=int)
     parser.add_argument("--batch_size", required=False, default=0, type=int)
+    parser.add_argument("--jobs", required=False, default=-1, type=int)
 
 def fix_path(path):
     return pathlib.Path(path).as_posix()
