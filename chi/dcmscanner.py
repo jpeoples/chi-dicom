@@ -337,7 +337,7 @@ def dicom_recursive_search(bpr, arg, cmdargs):
             relf = fix_path(os.path.relpath(f, root))
             rel_files.append(relf)
 
-    tab = pandas.Series(sdir, index=rel_files).to_frame("SubDirectory")
+    tab = pandas.Series(sdir, index=rel_files).to_frame("Subdirectory")
     tab.index.name = "File"
     return bpr.table(tab)
 
