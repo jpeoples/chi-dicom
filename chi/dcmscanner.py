@@ -131,15 +131,26 @@ def yield_files(zfpath, tab, tag_set, args):
                     with pydicom.dcmread(fp, stop_before_pixels=True, specific_tags=tag_set) as dcm:
                         yield ix, dcm
 
+def MISSING():
+    pass
+
+def _fix_val(x, missing_val="_chidcm_missing_", empty_val="_chidcm_empty_"):
+    if x is MISSING:
+        return missing_val
+    elif x is None or x.is_empty:
+        return empty_val
+    else:
+        return str(x.value)
+
+
+
 def scan_process_zip(zfname, tab, args, name_mapping, tag_set):
-    def fix_val(x):
-        return "" if x is None else str(x.value)
     tag_to_string = lambda t: name_mapping.get(t, t.tag_string())
 
     zfpath = os.path.join(args.root, zfname)
     read_results = {}
     for ix, dcm in yield_files(zfpath, tab, tag_set, args): 
-        read_results[ix] = {tag_to_string(tag): fix_val(dcm.get(tag)) for tag in tag_set} 
+        read_results[ix] = {tag_to_string(tag): _fix_val(dcm.get(tag, MISSING)) for tag in tag_set} 
     #with zipfile.ZipFile(zfpath, "r") as zf:
     #    for ix, name in tab['ArcName'].items():
     #        with zf.open(name) as fp:
@@ -304,7 +315,8 @@ def list_at_depth(root, depth=1):
 
         if cur_depth == depth:
             print(r, s, f)
-            assert len(f) == 0
+            if len(f) != 0:
+                print(f"There are {len(f)} files at depth {cur_depth} that are being ignored.\n    Root {r}\n    Files: {f}")
             yield from [fix_path(os.path.relpath(os.path.join(r, _s), root)) for _s in s]
 
 def dicom_recursive_search(bpr, arg, cmdargs):
