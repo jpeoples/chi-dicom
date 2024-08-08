@@ -119,6 +119,17 @@ def get_tag_set_for_args(args):
     tag_set = read_tagset(tag_string_list, special_cases=special_tag_cases, name_mapping=name_mapping)
     return tag_set, name_mapping
 
+def yield_files(zfpath, tab, tag_set, args):
+    if args.raw_dicom:
+        for f in tab.index:
+            with pydicom.dcmread(os.path.join(args.root, f), stop_before_pixels=True, specific_tags=tag_set) as dcm:
+                yield f, dcm
+    else:
+        with zipfile.ZipFile(zfpath, "r") as zf:
+            for ix, name in tab['ArcName'].items():
+                with zf.open(name) as fp:
+                    with pydicom.dcmread(fp, stop_before_pixels=True, specific_tags=tag_set) as dcm:
+                        yield ix, dcm
 
 def scan_process_zip(zfname, tab, args, name_mapping, tag_set):
     def fix_val(x):
@@ -127,11 +138,13 @@ def scan_process_zip(zfname, tab, args, name_mapping, tag_set):
 
     zfpath = os.path.join(args.root, zfname)
     read_results = {}
-    with zipfile.ZipFile(zfpath, "r") as zf:
-        for ix, name in tab['ArcName'].items():
-            with zf.open(name) as fp:
-                with pydicom.dcmread(fp, stop_before_pixels=True, specific_tags=tag_set) as dcm:
-                    read_results[ix] = {tag_to_string(tag): fix_val(dcm.get(tag)) for tag in tag_set} 
+    for ix, dcm in yield_files(zfpath, tab, tag_set, args): 
+        read_results[ix] = {tag_to_string(tag): fix_val(dcm.get(tag)) for tag in tag_set} 
+    #with zipfile.ZipFile(zfpath, "r") as zf:
+    #    for ix, name in tab['ArcName'].items():
+    #        with zf.open(name) as fp:
+    #            with pydicom.dcmread(fp, stop_before_pixels=True, specific_tags=tag_set) as dcm:
+    #                read_results[ix] = {tag_to_string(tag): fix_val(dcm.get(tag)) for tag in tag_set} 
 
     return read_results
 
@@ -166,47 +179,39 @@ def reduce_table_for_batch(index, args):
 
     return index
 
+def scan_process_zip_wrapper(bpr, zf_tab, args, name_mapping, tag_set):
+    result = scan_process_zip(zf_tab[0], zf_tab[1], args, name_mapping, tag_set)
+    result = zf_tab[1].join(pandas.DataFrame.from_dict(result, orient='index'), validate='one_to_one', how='inner')
+    return bpr.table(result)
+
 @entry.point
 def scan(args):
     tag_set, name_mapping = get_tag_set_for_args(args)
     print(name_mapping)
 
-    read_results = {}
-
-
+    #read_results = {}
     index = load_index(args)
-    index = reduce_table_for_batch(index, args)
-
-    results = Parallel(n_jobs=args.jobs, verbose=10)(delayed(scan_process_zip)(zfname, tab, args, name_mapping, tag_set) for zfname, tab in index.groupby("ZipFile"))
-    for res in results:
-        read_results.update(res)
-
-
-
-    tag_to_string = lambda t: name_mapping.get(t, t.tag_string())
-    tag_labels = [tag_to_string(t) for t in tag_set]
-    scan_results = make_df_from_result_dict(read_results, args, tag_labels)
-
-    output = index.join(scan_results, how='inner', validate='one_to_one')
-    output.to_csv(args.output)
+    bpr = DFBatchParRun.from_function(scan_process_zip_wrapper)
+    info = bpr.iter_info(index, group_key=args.group_key)
+    table = bpr.run_from_args(args, iter_args=(info,), execute_args=(args, name_mapping, tag_set))
+    if args.output_file is not None:
+        table.to_csv(args.output_file)
 
 @scan.parser
 def scan_parser(parser):
+    DFBatchParRun.update_parser(parser)
     parser.add_argument("--root", required=True)
-    parser.add_argument("--output", required=True)
+    parser.add_argument("--output_file", required=True)
     parser.add_argument("--tags", nargs="+", required=True, action='extend')
     parser.add_argument("--index", required=True)
     parser.add_argument("--tag_conf", required=False)
-    parser.add_argument("--batch_offset", required=False, default=-1, type=int)
-    parser.add_argument("--batch_size", required=False, default=0, type=int)
-    parser.add_argument("--jobs", required=False, default=-1, type=int)
+    parser.add_argument("--group_key", required=False, default="ZipFile")
+    parser.add_argument("--raw_dicom", action='store_true')
 
 def fix_path(path):
     return pathlib.Path(path).as_posix()
 
-def zip_archive_index_process(z, relz, args):
-    relz = fix_path(os.path.relpath(z, args.root))
-
+def zip_archive_index_process(z, relz):
     zdir = os.path.dirname(relz)
     try:
         zf = zipfile.ZipFile(z, "r")
@@ -220,53 +225,41 @@ def zip_archive_index_process(z, relz, args):
         index = pandas.Index(full_index, name="FileName")
         df = pandas.DataFrame({"ZipFile": [relz]*len(index), "ArcName": names}, index=index)
         return df
+
+def zip_archive_index_process_wrapper(bpr, arg, args):
+    ix, arg = arg
+    z = arg['ZipFile']
+    relz = fix_path(os.path.relpath(z, args.root))
+    table = zip_archive_index_process(z, relz)
+    return bpr.table(table)
+    
 @entry.point
 def zip_archive_index(args):
     zips = dicom.list_files(args.root, "*.zip")
+    bpr = DFBatchParRun.from_function(zip_archive_index_process_wrapper) 
+    table = pandas.DataFrame({"ZipFile": zips})
+    iter_info = bpr.iter_info(table)
+    results = bpr.run_from_args(args, iter_args=(iter_info,), execute_args=(args,))
+
+    if args.output_file is not None:
+        results.to_csv(args.output_file, index=True)
     
-    if os.path.exists(args.output) and not args.reread_all:
-        existing = pandas.read_csv(args.output, index_col=0)
-        existing_zips = set(existing['ZipFile'])
-        tables = [existing]
-    else:
-        existing_zips = set()
-        tables = []
+    # TODO Support for exclusions in batch par run?
+    #if os.path.exists(args.output) and not args.reread_all:
+    #    existing = pandas.read_csv(args.output, index_col=0)
+    #    existing_zips = set(existing['ZipFile'])
+    #    tables = [existing]
+    #else:
+    #    existing_zips = set()
+    #    tables = []
     
-    
-    relzips = [fix_path(os.path.relpath(z, args.root)) for z in zips]
-
-    zrelz = [(z, relz) for z, relz in zip(zips, relzips) if relz not in existing_zips]
-    print(len(relzips), len(zips), len(zrelz))
-
-
-    new_tables = Parallel(n_jobs=args.jobs, verbose=10)(delayed(zip_archive_index_process)(z, relz, args) for z, relz in zrelz)
-    tables.extend([t for t in new_tables if t is not None])
-
-    #for z, relz in tqdm(zrelz):
-    #    relz = fix_path(os.path.relpath(z, args.root))
-
-    #    zdir = os.path.dirname(relz)
-    #    try:
-    #        zf = zipfile.ZipFile(z, "r")
-    #    except zipfile.BadZipFile:
-    #        print("Bad zip:", z)
-    #        continue
-    #    
-    #    with zf:
-    #        names = zf.namelist()
-    #        full_index = [fix_path(os.path.join(zdir, name)) for name in names]
-    #        index = pandas.Index(full_index, name="FileName")
-    #        df = pandas.DataFrame({"ZipFile": [relz]*len(index), "ArcName": names}, index=index)
-    #        tables.append(df)
-    
-    outdf = pandas.concat(tables, axis='rows')
-    outdf.to_csv(args.output)
-
 @zip_archive_index.parser
 def zip_archive_index_parser(parser):
+    DFBatchParRun.update_parser(parser)
+
     parser.add_argument("--root", required=True)
-    parser.add_argument("--output", required=True)
-    parser.add_argument("--reread_all", action='store_true')
+    parser.add_argument("--output_file", required=True)
+    #parser.add_argument("--reread_all", action='store_true')
 
 @entry.point
 def index_info(args):
@@ -295,10 +288,64 @@ def index_info_parser(parser):
     parser.add_argument("--index", required=True)
     parser.add_argument("--batch_size", required=False, type=int, default=0)
 
-@entry.add_common_parser
-def common_parser(parser):
-    parser.add_argument("--jobs", type=int, default=1)
+#@entry.add_common_parser
+#def common_parser(parser):
+#    parser.add_argument("--jobs", type=int, default=1)
 
+import pathlib
+def list_at_depth(root, depth=1):
+    cur_depth=0
+    for r, s, f in os.walk(root, topdown=True):
+        rel_root = pathlib.Path(r).relative_to(root).as_posix()
+        if rel_root == ".":
+            cur_depth=1
+        else:
+            cur_depth = rel_root.count("/") + 2
+
+        if cur_depth == depth:
+            print(r, s, f)
+            assert len(f) == 0
+            yield from [fix_path(os.path.relpath(os.path.join(r, _s), root)) for _s in s]
+
+def dicom_recursive_search(bpr, arg, cmdargs):
+    import pydicom.errors
+    ix, row = arg
+    sdir = row['Subdirectory']
+    root = cmdargs.root
+
+    files = dicom.list_files(os.path.join(root, sdir))
+    
+    rel_files = []
+    for f in files:
+        try:
+            dcm = pydicom.dcmread(f, stop_before_pixels=True)
+        except pydicom.errors.InvalidDicomError:
+            continue
+        else:
+            relf = fix_path(os.path.relpath(f, root))
+            rel_files.append(relf)
+
+    tab = pandas.Series(sdir, index=rel_files).to_frame("SubDirectory")
+    tab.index.name = "File"
+    return bpr.table(tab)
+
+@entry.point
+def dicom_search(args):
+    directories = pandas.DataFrame({"Subdirectory": list_at_depth(args.root, args.depth)})
+    
+    bpr = DFBatchParRun.from_function(dicom_recursive_search)
+    info = bpr.iter_info(directories)
+    results = bpr.run_from_args(args, iter_args=(info, ), execute_args=(args,))
+
+    if args.output_file is not None:
+        results.to_csv(args.output_file)
+    
+@dicom_search.parser
+def dicom_search_parser(parser):
+    DFBatchParRun.update_parser(parser)
+    parser.add_argument("--root", required=True)
+    parser.add_argument("--depth", required=False, type=int, default=1)
+    parser.add_argument("--output_file", required=False)
 
 
 

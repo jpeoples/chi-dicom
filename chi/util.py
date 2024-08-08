@@ -13,10 +13,13 @@ class BatchParRun:
     def iteration_count(self):
         raise NotImplementedError()
     
-    def single(self, result):
-        return [result]
+    def single(self, result, index=None):
+        return pandas.DataFrame.from_records(result, index=index)
     
-    def multiple(self, result):
+    def multiple(self, result, index=None):
+        return pandas.DataFrame.from_records(result, index=index)
+
+    def table(self, result):
         return result
 
     def _prep_args(self, iter_args, execute_args):
@@ -30,7 +33,7 @@ class BatchParRun:
         iter_args, execute_args = self._prep_args(iter_args, execute_args)
         
         results = Parallel(n_jobs=n_jobs, verbose=10)(delayed(self.execute_one)(arg, *execute_args) for arg in self.iterate(start, stop, *iter_args))
-        results = pandas.DataFrame.from_records([r for res in results for r in res])
+        results = pandas.concat(results, axis=0)
         return results
 
     def run_from_args(self, args, iter_args=None, execute_args=None):
@@ -54,7 +57,7 @@ class DFBatchParRun(BatchParRun):
     def iter_info(self, df, group_key=None):
         info = dict(df=df)
         if group_key:
-            grouped = df.groupby(group_key),
+            grouped = df.groupby(group_key)
             info = dict(
                 group_key=group_key,
                 grouped = grouped,
@@ -77,6 +80,20 @@ class DFBatchParRun(BatchParRun):
             for gname in group_names:
                 tab = iter_info["grouped"].get_group(gname)
                 yield gname, tab
+
+    @classmethod
+    def from_function(cls, f):
+        return FunctionDFBatchParRun(f)
+
+class FunctionDFBatchParRun(DFBatchParRun):
+    def __init__(self, f):
+        self._execution_impl = f
+
+    def execute_one(self, arg, *execute_args):
+        return self._execution_impl(self, arg, *execute_args)
+
+    
+
 
 
     
