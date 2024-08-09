@@ -14,7 +14,7 @@ class BatchParRun:
         raise NotImplementedError()
     
     def single(self, result, index=None):
-        return pandas.DataFrame.from_records(result, index=index)
+        return pandas.DataFrame.from_records([result], index=index)
     
     def multiple(self, result, index=None):
         return pandas.DataFrame.from_records(result, index=index)
@@ -33,6 +33,7 @@ class BatchParRun:
         iter_args, execute_args = self._prep_args(iter_args, execute_args)
         
         results = Parallel(n_jobs=n_jobs, verbose=10)(delayed(self.execute_one)(arg, *execute_args) for arg in self.iterate(start, stop, *iter_args))
+        results = filter(lambda r: r is not None, results)
         results = pandas.concat(results, axis=0)
         return results
 

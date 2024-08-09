@@ -319,8 +319,16 @@ def list_at_depth(root, depth=1):
                 print(f"There are {len(f)} files at depth {cur_depth} that are being ignored.\n    Root {r}\n    Files: {f}")
             yield from [fix_path(os.path.relpath(os.path.join(r, _s), root)) for _s in s]
 
+import pydicom.errors
+def is_dicom(f):
+    try:
+        dcm = pydicom.dcmread(f, stop_before_pixels=True)
+    except pydicom.errors.InvalidDicomError:
+        return False
+    else:
+        return True
+
 def dicom_recursive_search(bpr, arg, cmdargs):
-    import pydicom.errors
     ix, row = arg
     sdir = row['Subdirectory']
     root = cmdargs.root
@@ -329,11 +337,7 @@ def dicom_recursive_search(bpr, arg, cmdargs):
     
     rel_files = []
     for f in files:
-        try:
-            dcm = pydicom.dcmread(f, stop_before_pixels=True)
-        except pydicom.errors.InvalidDicomError:
-            continue
-        else:
+        if is_dicom(f):
             relf = fix_path(os.path.relpath(f, root))
             rel_files.append(relf)
 
@@ -341,15 +345,51 @@ def dicom_recursive_search(bpr, arg, cmdargs):
     tab.index.name = "File"
     return bpr.table(tab)
 
+def full_file_list(root):
+    files = dicom.list_files(root)
+    rel_path = [fix_path(os.path.relpath(f, root)) for f in files]
+    return pandas.Series(files, index=rel_path).to_frame("FilePath")
+
+def dicom_file_check(bpr, arg, cmdargs):
+    chunk, tab = arg
+    dcms = []
+    for ix, row in tab.iterrows():
+        rel_path = ix
+        full_path = row['FilePath']
+        
+
+        if is_dicom(full_path):
+            dcms.append(dict(File=rel_path, Subdirectory=os.path.dirname(rel_path)))
+    if dcms:
+        return bpr.table(pandas.DataFrame.from_records(dcms, index="File"))  
+
+import itertools
+def chunker(size):
+    for ix in itertools.count():
+        yield from itertools.repeat(ix, size)
+
+    
+
 @entry.point
 def dicom_search(args):
-    directories = pandas.DataFrame({"Subdirectory": list_at_depth(args.root, args.depth)})
+    if args.depth>-1:
+        directories = pandas.DataFrame({"Subdirectory": list_at_depth(args.root, args.depth)})
+        bpr = DFBatchParRun.from_function(dicom_recursive_search)
+        info = bpr.iter_info(directories)
+    else:
+        directories = full_file_list(args.root)
+        print(f"Found total of {directories.shape[0]} files")
+        bpr = DFBatchParRun.from_function(dicom_file_check)
+        directories['ChunkLabel'] = pandas.Series(dict(zip(directories.index, chunker(args.chunk_size))))
+        info = bpr.iter_info(directories, 'ChunkLabel')
+        
     
-    bpr = DFBatchParRun.from_function(dicom_recursive_search)
-    info = bpr.iter_info(directories)
     results = bpr.run_from_args(args, iter_args=(info, ), execute_args=(args,))
 
     if args.output_file is not None:
+        #if args.depth==-1:
+        #    results.to_csv(args.output_file, index=False)
+        #else:
         results.to_csv(args.output_file)
     
 @dicom_search.parser
@@ -357,6 +397,7 @@ def dicom_search_parser(parser):
     DFBatchParRun.update_parser(parser)
     parser.add_argument("--root", required=True)
     parser.add_argument("--depth", required=False, type=int, default=1)
+    parser.add_argument("--chunk_size", required=False, type=int, default=500)
     parser.add_argument("--output_file", required=False)
 
 
