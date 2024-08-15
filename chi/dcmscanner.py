@@ -320,13 +320,16 @@ def list_at_depth(root, depth=1):
             yield from [fix_path(os.path.relpath(os.path.join(r, _s), root)) for _s in s]
 
 import pydicom.errors
-def is_dicom(f):
-    try:
-        dcm = pydicom.dcmread(f, stop_before_pixels=True)
-    except pydicom.errors.InvalidDicomError:
-        return False
+def is_dicom(f, parse=False):
+    if parse:
+        try:
+            dcm = pydicom.dcmread(f, stop_before_pixels=True)
+        except pydicom.errors.InvalidDicomError:
+            return False
+        else:
+            return True
     else:
-        return True
+        return f.endswith(".dcm")
 
 def dicom_recursive_search(bpr, arg, cmdargs):
     ix, row = arg
@@ -358,7 +361,7 @@ def dicom_file_check(bpr, arg, cmdargs):
         full_path = row['FilePath']
         
 
-        if is_dicom(full_path):
+        if is_dicom(full_path, cmdargs.check_dicom_parse):
             dcms.append(dict(File=rel_path, Subdirectory=os.path.dirname(rel_path)))
     if dcms:
         return bpr.table(pandas.DataFrame.from_records(dcms, index="File"))  
@@ -399,14 +402,6 @@ def dicom_search_parser(parser):
     parser.add_argument("--depth", required=False, type=int, default=1)
     parser.add_argument("--chunk_size", required=False, type=int, default=500)
     parser.add_argument("--output_file", required=False)
-
-
-
-    
-
-
-
-
-
+    parser.add_argument("--check_dicom_parse", action='store_true')
 
 if __name__=="__main__": main()
