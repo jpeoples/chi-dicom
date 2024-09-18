@@ -16,6 +16,8 @@ def read_tag(s):
 
     return tg
 
+
+# TODO Add support for multiple sub series tag specification (ie take files from Ac num X AND orientation Y)
 class ConvertBatchParRun(DFBatchParRun):
     def __init__(self, convert_func, input_root, output_root, output_tag):
         self.convert_func = convert_func
@@ -50,11 +52,50 @@ class ConvertBatchParRun(DFBatchParRun):
         return self.single(result)
 
 
-
+import tempfile
+def get_tempdir():
+    td = os.getenv("TMPDISK", None) # TODO Make this less CAC specific
+    if td is None:
+        td = tempfile.mkdtemp()
+    return td
+    
 
 @entry.point
 def convert(args):
-    return None
+    runner = ConvertBatchParRun(convert_impl, args.dicom_root, args.output_root, args.output_column)
+    dcm = pandas.read_csv(args.dicom_index, index_col=0)
+    convs = pandas.read_csv(args.conversions)
+    iter_info = runner.iter_info(convs)
+    results = runner.run_from_args(args, iter_args=(iter_info, dcm))
+    if args.output_file is not None:
+        results.to_csv(args.output_file, index=False)
+
+def convert_impl(input_root, output_root, target_tag, ix, row, dcm):
+    out_filename = row[target_tag]
+    name, ext = os.path.splitext(out_filename)
+    if ext == ".gz":
+        name, ext0 = os.path.splitext(name)
+        ext = ext0 + ext
+
+    assert ext != ""
+    tmp_root = get_tempdir()
+    tmp_folder = os.path.join(tmp_root, name)
+    os.makedirs(tmp_folder, exist_ok=True)
+    out_files = extract_selected_dicoms(dcm, input_root, tmp_folder)
+
+    output_file = os.path.join(output_root, out_filename)
+    output_dir = os.path.dirname(output_file)
+    os.makedirs(output_dir, exist_ok=True)
+    
+    # TODO It would be  better to use our scan results from dcmscanner, but there is a keyword vs tag name issue!
+    loader = dicom.SeriesLoadResult.from_files(out_files)
+    assert not loader.has_subseries()
+    img = loader.load_series()
+    sitk.WriteImage(img, output_file)
+
+    orow = row.copy()
+    return orow
+
 
 @convert.parser
 def convert_parser(parser):
@@ -71,41 +112,53 @@ def convert_parser(parser):
 import shutil
 import os
 import zipfile
+import SimpleITK as sitk
 
-
-
-def filter_impl(input_root, output_root, target_tag, ix, row, dcm):
+def extract_selected_dicoms(dcm, input_root, output_folder):
     files = list(dcm.index)
     if ('ZipFile' in dcm.columns) and ('ArcName' in dcm.columns):
         zip_mode = True
     else:
         zip_mode = False
 
-    output_folder = os.path.join(output_root, row[target_tag])
-    os.makedirs(output_folder, exist_ok=True)
+
     # Delete the output files if they exist
     # TODO Support for zip archives.
     if os.listdir(output_folder):
         for n in os.listdir(output_folder):
             os.unlink(os.path.join(output_folder, n))
-    for f, dcmrow in dcm.iterrows():
-        if zip_mode:
-            in_zip = os.path.join(input_root, dcmrow['ZipFile'])
-            dcmname = os.path.basename(f)
-            output_file = os.path.join(output_folder, dcmname)
-            name = dcmrow['ArcName']
-            with zipfile.ZipFile(in_zip, 'r') as zf:
-                with zf.open(name) as f, open(output_file, 'wb') as of:
-                    shutil.copyfileobj(f, of)
-
-        else:
+    # TODO this really ought to be grouped by zipfile and the file opened once, no? 
+    out_files = []
+    if zip_mode:
+        for zf, tab in dcm.groupby("ZipFile"):
+            in_zip = os.path.join(input_root, zf)
+            with zipfile.ZipFile(in_zip, "r") as zf:
+                for f, dcmrow in tab.iterrows():
+                    dcmname = os.path.basename(f)
+                    output_file = os.path.join(output_folder, dcmname)
+                    name = dcmrow['ArcName']
+                    with zf.open(name) as f, open(output_file, "wb") as of:
+                        shutil.copyfileobj(f, of)
+                    out_files.append(output_file)
+    else:
+        for f, dcmrow in dcm.iterrows():
             inpath = os.path.join(input_root, f)
             dcmname = os.path.basename(f)
             output_file = os.path.join(output_folder, dcmname)
             shutil.copy(inpath, output_file)
+            out_files.append(output_file)
+
+    return out_files
+
+
+def filter_impl(input_root, output_root, target_tag, ix, row, dcm):
+    output_folder = os.path.join(output_root, row[target_tag])
+    os.makedirs(output_folder, exist_ok=True)
+
+    out_files = extract_selected_dicoms(dcm, input_root, output_folder)
 
     orow = row.copy()
-    orow['FileCount'] = len(files)
+    orow['FileCount'] = len(out_files)
     return orow
 
 @entry.point

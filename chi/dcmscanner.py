@@ -147,6 +147,14 @@ def _fix_val(x, missing_val="_chidcm_missing_", empty_val="_chidcm_empty_"):
 def scan_process_zip(zfname, tab, args, name_mapping, tag_set):
     tag_to_string = lambda t: name_mapping.get(t, t.tag_string())
 
+    if args.group_key == "ZipFile":
+        assert zfname == tab['ZipFile'].unique()[0]
+    else:
+        input_zfname = zfname
+        zfname = tab['ZipFile'].unique()
+        assert len(zfname) == 1
+        zfname = zfname[0]
+
     zfpath = os.path.join(args.root, zfname)
     read_results = {}
     for ix, dcm in yield_files(zfpath, tab, tag_set, args): 
@@ -232,6 +240,8 @@ def zip_archive_index_process(z, relz):
     
     with zf:
         names = zf.namelist()
+        # TODO Make this configurable
+        names = [n for n in names if n.endswith(".dcm")]
         full_index = [fix_path(os.path.join(zdir, name)) for name in names]
         index = pandas.Index(full_index, name="FileName")
         df = pandas.DataFrame({"ZipFile": [relz]*len(index), "ArcName": names}, index=index)
