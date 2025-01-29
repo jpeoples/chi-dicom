@@ -151,7 +151,7 @@ def scan_process_zip(zfname, tab, args, name_mapping, tag_set):
         assert zfname == tab['ZipFile'].unique()[0]
     else:
         input_zfname = zfname
-        zfname = tab['ZipFile'].unique()
+        zfname = tab[args.group_key].unique()
         assert len(zfname) == 1
         zfname = zfname[0]
 
