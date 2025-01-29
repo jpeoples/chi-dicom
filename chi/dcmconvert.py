@@ -40,9 +40,15 @@ class ConvertBatchParRun(DFBatchParRun):
                 SUBSERIES = read_tag(subseriestag).keyword()
                 #SUBSERIES = dicom.Tag.from_tag_string(subseriestag).tag_string()
 
+            def tryint(x):
+                try:
+                    return int(x)
+                except ValueError:
+                    return None
+
             dcm_rows = (dcm[SERIES] == series) 
             if not full:
-                dcm_rows &= (dcm[SUBSERIES]==subseries)
+                dcm_rows &= (dcm[SUBSERIES].map(lambda s: str(tryint(s)))==str(int(subseries)))
             
             yield ix, row, dcm.loc[dcm_rows]
 
