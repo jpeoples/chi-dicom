@@ -28,7 +28,7 @@ setup(
     # If you want to use a module rather than entire package, list them here
     # py_modules=['module_file_name'], 
     # This will find packages for you, excluding the folders listed.
-    packages=find_namespace_packages(include=["chi.*"]), # Required
+    packages=find_namespace_packages(where=here, include=["chi*"]), # Required
 
     python_requires='>=3.0',
     install_requires=['python-gdcm', 'pydicom', 'SimpleITK', 'pandas'], # List your dependencies here
