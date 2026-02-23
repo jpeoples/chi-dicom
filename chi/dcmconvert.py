@@ -1,5 +1,6 @@
 from chi.util import DFBatchParRun, EntryPoints
 import pandas
+import shutil
 import pydicom
 
 from chi import dicom, dcmscanner
@@ -48,7 +49,7 @@ class ConvertBatchParRun(DFBatchParRun):
 
             dcm_rows = (dcm[SERIES] == series) 
             if not full:
-                dcm_rows &= (dcm[SUBSERIES].map(lambda s: str(tryint(s)))==str(int(subseries)))
+                dcm_rows &= (dcm[SUBSERIES].map(lambda s: str(s).strip()==str(subseries).strip()))
             
             yield ix, row, dcm.loc[dcm_rows]
 
@@ -76,6 +77,24 @@ def convert(args):
     if args.output_file is not None:
         results.to_csv(args.output_file, index=False)
 
+import contextlib
+import sys
+@contextlib.contextmanager
+def redirect_stderr_fdesc(to_file_no):
+    """A context manager to redirect the C-level stderr file descriptor."""
+    # Back up the original file descriptor
+    original_stderr_fdesc = os.dup(sys.stderr.fileno())
+    
+    # Redirect the actual stderr file descriptor to the target
+    os.dup2(to_file_no, sys.stderr.fileno())
+    
+    try:
+        yield
+    finally:
+        # Restore the original file descriptor
+        os.dup2(original_stderr_fdesc, sys.stderr.fileno())
+        os.close(original_stderr_fdesc)
+
 def convert_impl(input_root, output_root, target_tag, ix, row, dcm):
     out_filename = row[target_tag]
     name, ext = os.path.splitext(out_filename)
@@ -93,13 +112,37 @@ def convert_impl(input_root, output_root, target_tag, ix, row, dcm):
     output_dir = os.path.dirname(output_file)
     os.makedirs(output_dir, exist_ok=True)
     
+    error_string = ""
     # TODO It would be  better to use our scan results from dcmscanner, but there is a keyword vs tag name issue!
-    loader = dicom.SeriesLoadResult.from_files(out_files)
-    assert not loader.has_subseries()
-    img = loader.load_series()
-    sitk.WriteImage(img, output_file)
+    import io
+    import contextlib
+    import sys
+    with tempfile.TemporaryFile(mode='w+t') as tmpf:
+        try:
+            with redirect_stderr_fdesc(tmpf.fileno()):
+                loader = dicom.SeriesLoadResult.from_files(out_files)
+                assert not loader.has_subseries()
+                img = loader.load_series()
+                sitk.WriteImage(img, output_file)
+        except Exception as e:
+            print(row)
+            print(e)
+            print(out_files)
+            error_string = str(e)
+            import traceback
+            traceback.print_exc()
+        else:
+            tmpf.seek(0)
+            val = tmpf.read()
+            if val:
+                print("intercepted:", val)
+                error_string = val
+
+    
+    shutil.rmtree(tmp_folder)
 
     orow = row.copy()
+    orow['error'] = error_string
     return orow
 
 

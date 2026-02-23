@@ -186,7 +186,7 @@ def make_df_from_result_dict(read_results, args, tag_labels):
     return new_results
 
 def load_index(args):
-    index = pandas.read_csv(args.index, index_col=0)
+    index = pandas.read_csv(args.index, index_col=0, dtype=str)
     return index
 
 def reduce_table_for_batch(index, args):

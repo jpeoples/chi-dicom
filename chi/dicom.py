@@ -248,6 +248,14 @@ class SeriesLoadResult:
     
     def subseries_tags(self):
         return set(t for t in self.subseries)
+    
+    def subseries_tag_values(self, tag):
+        assert self.has_subseries()
+        return set(self.subseries[tag].groups.keys())
+
+    def get_files_for_subseries(self, tag, val):
+        files = self.subseries[tag].groups[val]
+        return files
 
     def load_subseries(self, tag):
         assert self.has_subseries()
