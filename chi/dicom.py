@@ -163,6 +163,41 @@ def sort_dicom_files(files):
     else:
         raise RuntimeError("Could not sort DICOM files base on Image Position (Patient)")
 
+def _fix_z_flip(image3D):
+    """Detect and correct a slice-normal sign flip caused by a negative
+    SpacingBetweenSlices tag (https://github.com/InsightSoftwareConsortium/ITK/issues/4794,
+    https://github.com/Slicer/Slicer/pull/7987).
+
+    Row/column cosines come from ImageOrientationPatient and are unaffected
+    by this bug - only the slice-normal (3rd Direction column) can end up
+    with the wrong sign. The correct normal is by definition row x col
+    (right-handed), so we recompute it directly rather than trusting what
+    was reported, and flip if it doesn't match.
+    """
+    import numpy as np
+    direction = np.array(image3D.GetDirection()).reshape(3, 3)
+    row_cosine = direction[:, 0]
+    col_cosine = direction[:, 1]
+    reported_normal = direction[:, 2]
+
+    correct_normal = np.cross(row_cosine, col_cosine)
+
+    if np.dot(reported_normal, correct_normal) < 0:
+        direction[:, 2] = correct_normal
+        image3D.SetDirection(tuple(direction.flatten()))
+
+    # Defensive: spacing should never be negative regardless of the above.
+    spacing = list(image3D.GetSpacing())
+    if spacing[2] < 0:
+        spacing[2] = abs(spacing[2])
+        image3D.SetSpacing(tuple(spacing))
+
+    # Permanent safety net: Direction must be a proper right-handed rotation.
+    det = np.linalg.det(np.array(image3D.GetDirection()).reshape(3, 3))
+    assert det > 0, f"Direction matrix is left-handed (det={det:.3f}) after fix"
+
+    return image3D
+
 def load_dicom_files(series_file_names, return_metadata=False, do_not_sort=False):
     """Load a set of dicom files into a volume, loading metadata if desired."""
     if not isinstance(series_file_names, list):
@@ -186,7 +221,9 @@ def load_dicom_files(series_file_names, return_metadata=False, do_not_sort=False
         return image3D, series_reader
     else:
         image3D = series_reader.Execute()
-        return image3D
+
+    image3D = _fix_z_flip(image3D)
+    return image3D
 
 
 def list_files(d, glob_string=None):
