@@ -33,7 +33,7 @@ class ConvertBatchParRun(DFBatchParRun):
         for ix, row in super().iterate(start, stop, iter_info):
             series = row['SeriesInstanceUID']
             SERIES = dicom.Tag.from_pydicom_attr("SeriesInstanceUID").keyword()
-            full = row['FullSeries']
+            full = row.get('FullSeries', True) # Assume full if no such column!
             if not full:
                 subseriestag = row['SubSeriesTag']
                 subseries = row['SubSeriesTagValue']
