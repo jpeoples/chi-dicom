@@ -2,12 +2,16 @@ PatientID
 PatientName
 StudyInstanceUID
 StudyDate
+StudyDescription
 SeriesInstanceUID
 SeriesDescription
+SeriesTime
 SeriesNumber
+ProtocolName
 Manufacturer
 ManufacturerModelName
 Modality
+:multivol:
 KVP
 SingleCollimationWidth
 TotalCollimationWidth
@@ -27,6 +31,7 @@ SpiralPitchFactor
 AcquisitionDateTime
 AcquisitionTime
 AcquisitionDate
+ContentTime
 ContrastBolusAgent
 ContrastBolusRoute
 ContrastBolusVolume
@@ -37,3 +42,4 @@ ContrastFlowRate
 ContrastFlowDuration
 ContrastBolusIngredient
 ContrastBolusIngredientConcentration
+

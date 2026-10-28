@@ -350,7 +350,7 @@ def dicom_recursive_search(bpr, arg, cmdargs):
     
     rel_files = []
     for f in files:
-        if is_dicom(f):
+        if is_dicom(f, cmdargs.check_dicom_parse):
             relf = fix_path(os.path.relpath(f, root))
             rel_files.append(relf)
 
